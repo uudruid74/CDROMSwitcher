@@ -1,0 +1,49 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="systems.eddon.android.cdromswitcher">
+
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme">
+        <activity
+            android:name=".MainActivity">
+        <intent-filter>
+            <action android:name="android.intent.action.SEND" />
+
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+
+            <data android:mimeType="application/x-iso9660-image" />
+
+        </intent-filter>
+        <intent-filter>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+
+            <data android:mimeType="application/x-iso9660-image" />
+            <data
+                android:host="*"
+                android:scheme="http" />
+            <data
+                android:host="*"
+                android:scheme="https" />
+
+            <data
+                android:host="*"
+                android:scheme="content" />
+
+            <data
+                android:host="*"
+                android:scheme="file" />
+        </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
