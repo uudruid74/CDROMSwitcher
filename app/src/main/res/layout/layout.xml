@@ -1,19 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/layout"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:orientation="vertical">
 
     <TextView
-        android:text="Switching your CD image!"
+        android:id="@+id/title"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:id="@+id/textView"
-        android:textAppearance="@style/TextAppearance.AppCompat"
+        android:layout_height="wrap_content"
+        android:fadeScrollbars="true"
         android:isScrollContainer="true"
         android:overScrollMode="always"
         android:scrollIndicators="right"
         android:scrollbarAlwaysDrawHorizontalTrack="false"
         android:scrollbarStyle="insideOverlay"
         android:scrollbars="vertical"
-        android:fadeScrollbars="true" />
+        android:text="@string/app_name"
+        android:textAlignment="center"
+        android:textAppearance="@style/TextAppearance.AppCompat"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:typeface="sans" />
+
+    <TextView
+        android:id="@+id/textView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:fontFamily="monospace"
+        android:typeface="monospace" />
 </LinearLayout>
