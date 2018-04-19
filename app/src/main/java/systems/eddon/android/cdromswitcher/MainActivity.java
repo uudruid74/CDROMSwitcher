@@ -1,11 +1,14 @@
 package systems.eddon.android.cdromswitcher;
 
 import android.app.Activity;
+import android.app.Application;
 import android.content.ContentResolver;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
+import android.preference.PreferenceManager;
 import android.text.method.ScrollingMovementMethod;
 import android.util.Log;
 import android.view.Menu;
@@ -33,10 +36,8 @@ import java.util.concurrent.TimeUnit;
 public class MainActivity extends Activity {
     static final int BUFSIZE = 65536;
     Handler messageHandler = new Handler();
-    final String SystemBaseDevice = "/sys/class/android_usb/android0/";
-    final String OSDefaultCDFile  = "/system/etc/usb_drivers.iso";
-    final String SystemInterface  = "/sys/class/android_usb/android0/f_mass_storage/cdrom/";
-    final String DefaultFileName  = "/storage/emulated/0/usb_drivers.iso";
+
+    public final static String DefaultFileName  = "/storage/emulated/0/default.iso";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -78,10 +79,10 @@ public class MainActivity extends Activity {
     private Runnable threadIntent = new Runnable() {
         public void run() {
             if (ImportIntent()) {
-                //messageHandler.postDelayed(finishIt,500);
-                messageHandler.post(finishIt);
+                messageHandler.postDelayed(finishIt,2000);
+                //messageHandler.post(finishIt);
             } else {
-                messageHandler.postDelayed(finishIt,8000);
+                messageHandler.postDelayed(finishIt,5000);
             }
         }
     };
@@ -116,28 +117,43 @@ public class MainActivity extends Activity {
         if (u == null) {
             if (action.equals("android.intent.action.MAIN")) {
                 try {
-                    Process p = Runtime.getRuntime().exec("su");
+                    Process p = Runtime.getRuntime().exec("su - root");
                     InputStream pi = p.getInputStream();
                     DataOutputStream po = new DataOutputStream(p.getOutputStream());
-                    if (suwait(po, pi)) {
-                        displayMessage("Thanks! Now open an ISO file");
-                        return true;
+                    if (UsbEventReceiver.suwait(po, pi)) {
+                        displayMessage("Open an ISO file from any app to mount it");
+                    } else {
+                        displayMessage("This app requires root");
                     }
-                    else
-                        displayMessage("Sorry!  I need root!");
                 }
-                catch (Exception e) {}
+                catch (Exception e){
+                    popupMessage("Sorry, but something went wrong: "
+                            + e.getLocalizedMessage());
+                }
             } else{
                 displayMessage("Action is " + action + "\nURL is a null!  FAIL!");
             }
             return false;
         } else {
-            displayMessage("  to URL " + u.getEncodedPath());
+            displayMessage("URL: " + u.getEncodedPath());
         }
         String scheme = u.getScheme();
-        //displayMessage("Using scheme " + scheme);
-
-        if (ContentResolver.SCHEME_CONTENT.equals(scheme)) {
+        displayMessage("Using scheme " + scheme);
+        if (ContentResolver.SCHEME_FILE.equals(scheme) ||
+                ((ContentResolver.SCHEME_CONTENT.equals(scheme))
+                        && (u.getPath().startsWith("/")))) {
+            String filePath = u.getPath();
+            if (filePath.startsWith("/"))
+                filePath = u.getEncodedPath().replaceAll("%20", " ")
+                        .replaceAll("%26","&")
+                        .replaceAll("&amp;", "&");
+            if (filePath == null) {
+                displayMessage("The path to the file was a null - FAIL!");
+                return false;
+            }
+            displayMessage("Using filename: " + filePath);
+            s = filePath;
+        } else if (ContentResolver.SCHEME_CONTENT.equals(scheme)) {
             try {
                 ContentResolver cr = getContentResolver();
                 //AssetFileDescriptor afd = cr.openAssetFileDescriptor(u, "r");
@@ -154,7 +170,8 @@ public class MainActivity extends Activity {
                 else
                     s = null;
             } catch (IOException err) {
-                String Error = "Couldn't read data from app - FAIL due to " + err.getLocalizedMessage();
+                String Error = "Couldn't read data from app - FAIL due to "
+                        + err.getLocalizedMessage();
                 displayMessage(Error);
                 popupMessage(Error);
                 return false;
@@ -180,116 +197,22 @@ public class MainActivity extends Activity {
                 popupMessage(Error);
                 return false;
             }
-
         } else {
-            String filePath = u.getPath();
-            /* filePath = u.getEncodedPath().replaceAll("%20", " ")
-                        .replaceAll("%26","&")
-                        .replaceAll("&amp;", "&"); */
-            if (filePath == null) {
-                displayMessage("The path to the file was a null - FAIL!");
-                return false;
-            }
-            //displayMessage("Using filename: " + filePath);
-            s = filePath;
+            s = DefaultFileName;
+            displayMessage("Unhandled Intent");
+            popupMessage("I don't know how to get that info!");
         }
-        return writeToSystem(SystemInterface, s);
+        writeToPreferences(s);
+        return true;
     }
 
-    private boolean writeToSystem(final String system, final String file) {
-        Process p;
-        try{
-            // Preform su to get root
-            // OLD WAY
-            /*
-            byte[] buf = new byte[1024];
-            p = Runtime.getRuntime().exec(new String[] { "su", "-c", "blkid " + file });
-            InputStream pi = p.getInputStream();
-            p.waitFor();
-            pi.read(buf,0,1024);
-            displayMessage("result: " + new String(buf));
-            Arrays.fill(buf, (byte)0);
-            p = Runtime.getRuntime().exec(new String[] { "su", "-c", "echo " + file + " > " + system });
-            p.waitFor();
-            p = Runtime.getRuntime().exec(new String[] { "su", "-c", "cat " + system });
-            pi = p.getInputStream();
-            p.waitFor();
-            pi.read(buf,0,1024);
-            String result = new String(buf).trim();
-            displayMessage("New ISO is set to " + result);
-            if (! file.equals(result)) {
-                displayMessage("FAIL! Make sure your USB is unplugged and try again!");
-                return false;
-            }
-            return true;
-            */
-            p = Runtime.getRuntime().exec("su - root");
-            InputStream pi = p.getInputStream();
-            DataOutputStream po = new DataOutputStream(p.getOutputStream());
-            if (suwait(po,pi)) {
-                powrite(po, pi, ("echo 0 >" + SystemBaseDevice + "enable\n"));
-                powrite(po, pi, ("busybox mount -o remount,rw /system\n"));
-                powrite(po, pi, ("setprop sys.usb.cdrom \"" + file + "\"\n"));
-                powrite(po, pi, ("if [ ! -e \"" + OSDefaultCDFile + ".orig.iso\" ]; then\nmv "
-                        + OSDefaultCDFile + " " + OSDefaultCDFile + ".orig.iso\nfi\nrm "
-                        + OSDefaultCDFile + "\n"));
-                powrite(po, null, ("cat " + SystemInterface + "file\n"));
-                powrite(po, pi, ("ln -s \"" + file + "\" " + OSDefaultCDFile + "\n"));
-                powrite(po, pi, ("busybox mount -o remount,ro /system\n"));
-                powrite(po, pi, ("echo 1 >" + SystemBaseDevice + "enable\n"));
-                powrite(po, pi, ("while [ ! -e " + SystemInterface + "file ]; do\nsleep 1\ndone\n"));
-                powrite(po, pi, ("echo \"" + file +"\" > " + SystemInterface + "file\n"));
-                displayMessage("All DONE!  SUCCESS!");
-                return true;
-            } else {
-                displayMessage("FAIL! Couldn't get root!");
-                return false;
-            }
-        }
-        catch (Exception e)
-        {
-            String Error = "FAIL! Sorry, " + e.getLocalizedMessage();
-            displayMessage(Error);
-            popupMessage(Error);
-            return false;
-        }
+    private void writeToPreferences(final String file)
+    {
+        SharedPreferences.Editor settings = PreferenceManager.getDefaultSharedPreferences(MainActivity.this).edit();
+        settings.putString("defaultiso",file).apply();
+        UsbEventReceiver.writeToSystem(file);
     }
-    private void powrite (DataOutputStream po, InputStream pi, String s) throws java.io.IOException, java.lang.InterruptedException {
-        //displayMessage(s.trim());
-        po.writeBytes(s);
-        po.flush();
 
-        if (pi != null) {
-            if (pi.available() > 0) {
-                byte[] buf = new byte[pi.available()];
-                pi.read(buf);
-                String result = new String(buf).trim();
-                if (result.length() > 0) {
-                    displayMessage(result);
-                }
-            }
-        }
-    }
-    private boolean suwait (DataOutputStream po, InputStream pi) throws java.io.IOException, java.lang.InterruptedException {
-        displayMessage("Aquiring root!");
-        po.writeBytes("whoami\n");
-        po.flush();
-        int seconds = 0;
-        while ((pi.available() == 0) && (seconds++ < 20)){
-            Thread.sleep(1000);
-        }
-        if (pi.available() > 0) {
-            byte[] buf = new byte[pi.available()];
-            pi.read(buf);
-            String result = new String(buf).trim();
-            if (result.length() > 0) {
-                displayMessage("I am " + result);
-                if (result.equals("root"))
-                    return true;
-            }
-        }
-        return false;
-    }
     private boolean copyToRootFile(InputStream is, String FileName)
     {
         Process p;
