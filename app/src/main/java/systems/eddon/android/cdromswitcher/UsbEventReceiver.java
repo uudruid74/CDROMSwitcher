@@ -18,6 +18,8 @@ public class UsbEventReceiver extends BroadcastReceiver {
     final static String usbStateChangeAction = "android.hardware.usb.action.USB_DEVICE_ATTACHED";
     final static String SystemBaseDevice = "/sys/class/android_usb/android0/";
     final static String SystemInterface  = SystemBaseDevice + "f_mass_storage/lun/";
+    final static String SystemInterfaceAlt1 = SystemBaseDevice + "f_mass_storage/cdrom/";
+
     static Context savedContext = null;
 
     @Override
@@ -71,7 +73,9 @@ public class UsbEventReceiver extends BroadcastReceiver {
                 }
                 // Log.i("writeToSystem","About to start sleep loop");
                 powrite(po, pi, ("echo \'" + file +"\' >" + SystemInterface + "file\n"));
-                String newfile = powrite(po, pi, ("cat " + SystemInterface + "file\n"));
+                powrite(po, pi, ("echo \'" + file +"\' >" + SystemInterfaceAlt1 + "file\n"));
+
+                //String newfile = powrite(po, pi, ("cat " + SystemInterface + "file\n"));
                 powrite(po, pi, ("echo 1 >" + SystemBaseDevice + "enable\n"));
                 Log.i("writeToSystem","All DONE!  SUCCESS!");
                 return true;
