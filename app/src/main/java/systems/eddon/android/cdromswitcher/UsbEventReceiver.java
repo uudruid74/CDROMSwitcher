@@ -14,21 +14,20 @@ import java.io.InputStreamReader;
 import java.io.RandomAccessFile;
 
 public class UsbEventReceiver extends BroadcastReceiver {
-    final int ISO_MAX_LEN = 40;
+    final static int ISO_MAX_LEN = 32;
+    final static int ISO_NAME_SEEK = 32808;
+    final static String PREF_ISONAME = "defaultiso";
     final static String usbStateChangeAction = "android.hardware.usb.action.USB_DEVICE_ATTACHED";
     final static String SystemBaseDevice = "/sys/class/android_usb/android0/";
     final static String SystemInterface  = SystemBaseDevice + "f_mass_storage/lun/";
     final static String SystemInterfaceAlt1 = SystemBaseDevice + "f_mass_storage/cdrom/";
 
-    static Context savedContext = null;
-
     @Override
     public void onReceive(Context context, Intent intent) {
         Log.i("onReceive","Got a USB ATTACH event!");
-        savedContext = context;
         if(intent.getAction().equalsIgnoreCase(usbStateChangeAction)) { //Check if change in USB state
             if(intent.getExtras().getBoolean("connected")) {
-                final String ISOFilename = getISOFile();
+                final String ISOFilename = getISOFile(context);
                 writeToSystem(ISOFilename);
                 // need to create notification here, display ISO name
                 Log.i("onReceive",readISOName(ISOFilename));
@@ -38,22 +37,24 @@ public class UsbEventReceiver extends BroadcastReceiver {
             }
         }
     }
-    private String readISOName(final String file) {
+    public static String readISOName(final String file) {
         byte[] magic = new byte[ISO_MAX_LEN];
         try {
-            RandomAccessFile raf = new RandomAccessFile(file, "rw");
-            raf.seek(32808);
+            Log.d("readISOName",file);
+            RandomAccessFile raf = new RandomAccessFile(file, "r");
+            raf.seek(ISO_NAME_SEEK);
             raf.readFully(magic);
-            return magic.toString();
+            raf.close();
+            return new String(magic,"UTF-8");
         }
         catch (java.io.IOException e) {
             Log.e("readISOName", e.getLocalizedMessage());
             return "Unknown ISO File";
         }
     }
-    private String getISOFile() {
-        SharedPreferences settings = PreferenceManager.getDefaultSharedPreferences(savedContext);
-        return settings.getString("defaultiso",MainActivity.DefaultFileName);
+    public static String getISOFile(Context ctx) {
+        SharedPreferences settings = PreferenceManager.getDefaultSharedPreferences(ctx);
+        return settings.getString(PREF_ISONAME,MainActivity.DefaultFileName);
     }
 
     public static boolean writeToSystem(final String file) {

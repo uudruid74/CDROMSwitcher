@@ -1,54 +1,45 @@
 package systems.eddon.android.cdromswitcher;
 
+import android.Manifest;
 import android.app.Activity;
-import android.app.Application;
 import android.content.ContentResolver;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.preference.PreferenceManager;
+import android.support.v13.app.ActivityCompat;
+import android.support.v4.content.ContextCompat;
 import android.text.method.ScrollingMovementMethod;
 import android.util.Log;
-import android.view.Menu;
-import android.view.MenuItem;
 import android.widget.TextView;
 import android.widget.Toast;
-
-import java.io.ByteArrayInputStream;
-import java.io.DataInputStream;
 import java.io.DataOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
-
 
 public class MainActivity extends Activity {
-    static final int BUFSIZE = 65536;
-    Handler messageHandler = new Handler();
+    static Handler messageHandler = new Handler();
+    static TextView tv = null;
+    static ArrayList<String> storage = new ArrayList<String>();
+    static Context myContext = null;
 
     public final static String DefaultFileName  = "/storage/emulated/0/default.iso";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.layout);
-        TextView tv = (TextView) findViewById(R.id.textView);
-        tv.setMovementMethod(new ScrollingMovementMethod());
+        myContext = getApplicationContext();
         new Thread(threadIntent).start();
     }
 
-    public void popupMessage(final String errorText) {
+    public String popupMessage(final String errorText) {
         Runnable doPopupMessage = new Runnable() {
             public void run() {
                 Toast.makeText(getApplicationContext(), errorText, Toast.LENGTH_SHORT).show();
@@ -56,18 +47,44 @@ public class MainActivity extends Activity {
         };
         Log.d("PopUP", errorText);
         messageHandler.post(doPopupMessage);
+        return errorText;
     }
 
     public void displayMessage(final String dispText) {
         Runnable doDisplayMessage = new Runnable() {
             public void run() {
-                TextView tv = (TextView) findViewById(R.id.textView);
-                String content = tv.getText().toString() + "\n" + dispText;
-                tv.setText(content);
+                tv.append(dispText);
+                tv.append("\n");
             }
         };
         Log.d("TextDisplay", dispText);
-        messageHandler.post(doDisplayMessage);
+        if (tv != null)
+            messageHandler.post(doDisplayMessage);
+        else {
+            storage.add(dispText);
+        }
+    }
+    public void displayError(final String dispText) {
+        Runnable startFullDisplay = new Runnable() {
+            public void run() {
+                Log.i("DisplayError","Opening the full window for " + dispText);
+                setContentView(R.layout.layout);
+                tv = findViewById(R.id.textView);
+                tv.setMovementMethod(new ScrollingMovementMethod());
+                for (String item: storage) {
+                    tv.append(item);
+                    tv.append("\n");
+                }
+                tv.append(dispText);
+                tv.append("\n");
+            }
+        };
+        if (tv == null) {
+            Log.e("displayError",dispText);
+            messageHandler.post(startFullDisplay);
+        } else {
+            displayMessage(dispText);
+        }
     }
 
     private Runnable finishIt = new Runnable() {
@@ -79,8 +96,11 @@ public class MainActivity extends Activity {
     private Runnable threadIntent = new Runnable() {
         public void run() {
             if (ImportIntent()) {
-                messageHandler.postDelayed(finishIt,2000);
-                //messageHandler.post(finishIt);
+                popupMessage("Mounted " + UsbEventReceiver.readISOName(
+                        UsbEventReceiver.getISOFile(myContext)
+                ));
+                messageHandler.post(finishIt);
+                //messageHandler.postDelayed(finishIt,2000);
             } else {
                 messageHandler.postDelayed(finishIt,5000);
             }
@@ -92,7 +112,7 @@ public class MainActivity extends Activity {
         Intent i = getIntent();
         //displayMessage("Importing Data Using Intent");
         if (i == null) {
-            displayMessage("Intent is a null!  Sorry, but I failed!");
+            displayError("Intent is a null!  Sorry, but I failed!");
             return false;
         }
         String action = i.getAction();
@@ -104,7 +124,7 @@ public class MainActivity extends Activity {
                 u = Uri.parse(s);
             }
             if (i.hasExtra(Intent.EXTRA_STREAM)) {
-                displayMessage("We can't handle streams!  FAIL!");
+                displayError("We can't handle streams!  FAIL!");
                 u = (Uri) getIntent().getExtras().get(Intent.EXTRA_STREAM);
             }
             if (u == null)
@@ -121,17 +141,25 @@ public class MainActivity extends Activity {
                     InputStream pi = p.getInputStream();
                     DataOutputStream po = new DataOutputStream(p.getOutputStream());
                     if (UsbEventReceiver.suwait(po, pi)) {
-                        displayMessage("Open an ISO file from any app to mount it");
+                        displayError("Open an ISO file from any app to mount it");
                     } else {
-                        displayMessage("This app requires root");
+                        displayError("This app requires root");
+                    }
+                    if (ContextCompat.checkSelfPermission(this,Manifest.permission.READ_EXTERNAL_STORAGE)
+                            != PackageManager.PERMISSION_GRANTED) {
+                        displayError("Storage permission is needed to read the ISO disc name!");
+                        ActivityCompat.requestPermissions(this,
+                                new String[] {Manifest.permission.READ_EXTERNAL_STORAGE},
+                                1);
                     }
                 }
                 catch (Exception e){
-                    popupMessage("Sorry, but something went wrong: "
-                            + e.getLocalizedMessage());
+                    displayError(
+                        popupMessage("Sorry, but something went wrong: "
+                            + e.getLocalizedMessage()));
                 }
             } else{
-                displayMessage("Action is " + action + "\nURL is a null!  FAIL!");
+                displayError("Action is " + action + "\nURL is a null!  FAIL!");
             }
             return false;
         } else {
@@ -148,7 +176,7 @@ public class MainActivity extends Activity {
                         .replaceAll("%26","&")
                         .replaceAll("&amp;", "&");
             if (filePath == null) {
-                displayMessage("The path to the file was a null - FAIL!");
+                displayError("The path to the file was a null - FAIL!");
                 return false;
             }
             displayMessage("Using filename: " + filePath);
@@ -161,7 +189,7 @@ public class MainActivity extends Activity {
                 //byte[] filedata = new byte[(int) length];
                 is = cr.openInputStream(u);
                 if (is == null) {
-                    displayMessage("Couldn't open inputStream!  FAIL!");
+                    displayError("Couldn't open inputStream!  FAIL!");
                     return false;
                 }
                 displayMessage("Attempting to read image from app");
@@ -183,7 +211,7 @@ public class MainActivity extends Activity {
                 //is = urlConn.getInputStream();
                 is = website.openStream();
                 if (is == null) {
-                    displayMessage("Couldn't open inputStream.  FAIL!");
+                    displayError("Couldn't open inputStream.  FAIL!");
                     return false;
                 }
                 displayMessage("Copying from URL ...");
@@ -192,15 +220,15 @@ public class MainActivity extends Activity {
                 else
                     s = null;
             } catch (IOException err) {
-                String Error = "Couldn't read URL - FAIL due to " + err.getLocalizedMessage();
-                displayMessage(Error);
-                popupMessage(Error);
+                displayError(
+                        popupMessage(
+                                "Couldn't read URL - FAIL due to " + err.getLocalizedMessage()));
                 return false;
             }
         } else {
             s = DefaultFileName;
-            displayMessage("Unhandled Intent");
-            popupMessage("I don't know how to get that info!");
+            displayError(
+                popupMessage("Unhandled Intent.  I don't know how to get that info!"));
         }
         writeToPreferences(s);
         return true;
@@ -209,7 +237,7 @@ public class MainActivity extends Activity {
     private void writeToPreferences(final String file)
     {
         SharedPreferences.Editor settings = PreferenceManager.getDefaultSharedPreferences(MainActivity.this).edit();
-        settings.putString("defaultiso",file).apply();
+        settings.putString(UsbEventReceiver.PREF_ISONAME,file).apply();
         UsbEventReceiver.writeToSystem(file);
     }
 
@@ -227,9 +255,7 @@ public class MainActivity extends Activity {
         }
         catch (Exception e)
         {
-            String Error = "FAIL! Sorry, " + e.getLocalizedMessage();
-            displayMessage(Error);
-            popupMessage(Error);
+            displayError(popupMessage("FAIL! Sorry, " + e.getLocalizedMessage()));
             return false;
         }
     }
@@ -246,10 +272,8 @@ public class MainActivity extends Activity {
             return true;
         }
         catch (Exception err) {
-            String Error = "FAIL! Couldn't copy data due to "
-                    + err.getLocalizedMessage();
-            displayMessage(Error);
-            popupMessage(Error);
+            displayError(popupMessage("FAIL! Couldn't copy data due to "
+                    + err.getLocalizedMessage()));
             return false;
         }
     }
